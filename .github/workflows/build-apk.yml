@@ -1,0 +1,51 @@
+name: Build J Launcher APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ambil project
+        uses: actions/checkout@v4
+
+      - name: Siapkan Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Siapkan Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Siapkan Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Ekstrak project J Launcher
+        run: |
+          mkdir -p project
+          ZIP=$(find . -maxdepth 1 -name "*.zip" | head -n 1)
+          unzip -q "$ZIP" -d project
+          cd project 
+          DIR=$(find . -name settings.gradle.kts -printf '%h\n' | head -n 1)
+          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
+
+      - name: Build APK
+        run: |
+          cd "project/$PROJECT_DIR"
+          gradle :app:assembleDebug
+
+      - name: Simpan APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: J-Launcher-APK
+          path: project/**/app/build/outputs/apk/debug/app-debug.apk
+          
