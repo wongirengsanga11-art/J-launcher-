@@ -22,12 +22,31 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Install Android SDK
+      - name: Setup Android SDK
         shell: bash
         run: |
           set -e
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+
+          if [ -n "${ANDROID_HOME:-}" ]; then
+            SDK="$ANDROID_HOME"
+          else
+            SDK="/usr/local/lib/android/sdk"
+            export ANDROID_HOME="$SDK"
+          fi
+
+          if [ -f "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          else
+            SDKMANAGER="$(find "$SDK/cmdline-tools" -name sdkmanager -type f | head -n 1)"
+          fi
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager tidak ditemukan"
+            exit 1
+          fi
+
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
@@ -36,35 +55,34 @@ jobs:
         shell: bash
         run: |
           set -e
+
           rm -rf project
           mkdir -p project
 
           ZIP="./JLauncher-0.3.0-project-LENGKAP.zip"
 
           if [ ! -f "$ZIP" ]; then
-            ZIP="$(find . -maxdepth 1 -type f -name '*.zip' -print -quit)"
-          fi
-
-          if [ -z "$ZIP" ] || [ ! -f "$ZIP" ]; then
-            echo "J Launcher ZIP tidak ditemukan."
+            echo "File J Launcher tidak ditemukan"
             exit 1
           fi
 
           unzip -q "$ZIP" -d project
 
-          SETTINGS="$(find project -type f -name settings.gradle.kts -print -quit)"
+          PROJECT_DIR="$(find project -type f -name settings.gradle.kts -printf '%h\n' | head -n 1)"
 
-          if [ -z "$SETTINGS" ]; then
-            echo "settings.gradle.kts tidak ditemukan."
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "settings.gradle.kts tidak ditemukan"
             exit 1
           fi
 
-          PROJECT_DIR="$(dirname "$SETTINGS")"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Project ditemukan: $PROJECT_DIR"
 
-      - name: Build debug APK
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Build Debug APK
+        shell: bash
         run: |
+          set -e
+          cd "$PROJECT_DIR"
           gradle --no-daemon --stacktrace :app:assembleDebug
 
       - name: Upload APK
