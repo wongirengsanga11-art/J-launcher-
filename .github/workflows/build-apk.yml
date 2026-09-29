@@ -8,44 +8,68 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Ambil project
+      - name: Checkout project
         uses: actions/checkout@v4
 
-      - name: Siapkan Java
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Siapkan Gradle
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Siapkan Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install Android SDK
+        shell: bash
         run: |
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          set -e
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
-      - name: Ekstrak project J Launcher
+      - name: Extract J Launcher project
+        shell: bash
         run: |
+          set -e
+          rm -rf project
           mkdir -p project
-          ZIP=$(find . -maxdepth 1 -name "*.zip" | head -n 1)
+
+          ZIP="./JLauncher-0.3.0-project-LENGKAP.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            ZIP="$(find . -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          fi
+
+          if [ -z "$ZIP" ] || [ ! -f "$ZIP" ]; then
+            echo "J Launcher ZIP tidak ditemukan."
+            exit 1
+          fi
+
           unzip -q "$ZIP" -d project
-          cd project 
-          DIR=$(find . -name settings.gradle.kts -printf '%h\n' | head -n 1)
-          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
 
-      - name: Build APK
+          SETTINGS="$(find project -type f -name settings.gradle.kts -print -quit)"
+
+          if [ -z "$SETTINGS" ]; then
+            echo "settings.gradle.kts tidak ditemukan."
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$SETTINGS")"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Build debug APK
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          cd "project/$PROJECT_DIR"
-          gradle :app:assembleDebug
+          gradle --no-daemon --stacktrace :app:assembleDebug
 
-      - name: Simpan APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: J-Launcher-APK
-          path: project/**/app/build/outputs/apk/debug/app-debug.apk
-          
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
