@@ -1,3 +1,4 @@
+
 name: Build J Launcher APK
 
 on:
@@ -17,77 +18,50 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
       - name: Setup Android SDK
-        shell: bash
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
         run: |
-          set -e
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-          if [ -n "${ANDROID_HOME:-}" ]; then
-            SDK="$ANDROID_HOME"
-          else
-            SDK="/usr/local/lib/android/sdk"
-            export ANDROID_HOME="$SDK"
-          fi
-
-          if [ -f "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
-            SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
-          else
-            SDKMANAGER="$(find "$SDK/cmdline-tools" -name sdkmanager -type f | head -n 1)"
-          fi
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "sdkmanager tidak ditemukan"
-            exit 1
-          fi
-
-          yes | "$SDKMANAGER" --licenses || true
-          "$SDKMANAGER" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-      - name: Extract J Launcher project
-        shell: bash
+      - name: Extract project ZIP
         run: |
-          set -e
-
-          rm -rf project
+          set -eu
           mkdir -p project
+          unzip -q JLauncher-0.3.0-project-LENGKAP.zip -d project
 
-          ZIP="./JLauncher-0.3.0-project-LENGKAP.zip"
-
-          if [ ! -f "$ZIP" ]; then
-            echo "File J Launcher tidak ditemukan"
-            exit 1
-          fi
-
-          unzip -q "$ZIP" -d project
-
-          PROJECT_DIR="$(find project -type f -name settings.gradle.kts -printf '%h\n' | head -n 1)"
+          PROJECT_DIR="$(find project -type f \( -name settings.gradle.kts -o -name settings.gradle \) -print -quit | xargs -r dirname)"
 
           if [ -z "$PROJECT_DIR" ]; then
-            echo "settings.gradle.kts tidak ditemukan"
+            echo "File settings.gradle(.kts) tidak ditemukan"
             exit 1
           fi
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Project ditemukan: $PROJECT_DIR"
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
       - name: Build Debug APK
-        shell: bash
         run: |
-          set -e
+          set -eu
           cd "$PROJECT_DIR"
-          gradle --no-daemon --stacktrace :app:assembleDebug
+
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew --no-daemon --stacktrace :app:assembleDebug
+          else
+            gradle --no-daemon --stacktrace :app:assembleDebug
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: J-Launcher-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          path: project/**/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+          
